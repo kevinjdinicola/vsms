@@ -1,8 +1,11 @@
 var when        = require('when'),
 		https       = require('https'),
-		querystring = require('querystring');
+		querystring = require('querystring'),
+		messenger   = require('./messenger');
 
 module.exports = vsms = {};
+
+vsms.messenger = messenger;
 
 vsms.webAuth = {
 	generatePin: function(phone, deviceName) {

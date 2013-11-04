@@ -1,6 +1,11 @@
-var util = require("util"),
+var util   = require("util"),
 		events = require("events"),
-		when = require("when");
+		when   = require("when"),
+		tls    = require('tls'),
+		Parser = require("./imapparser");
+
+var port = 993,
+		server = "imap.vma.vzw.com"
 
 /*
 --Note: a config object is required to create a messenger.  it looks like this:
@@ -13,7 +18,7 @@ var util = require("util"),
 
  */
 var messenger = function(config) {
-	messenger.config = config || {};
+	this.config = config || {};
 	events.EventEmitter.call(this);
 }
 
@@ -21,9 +26,55 @@ util.inherits(messenger, events.EventEmitter);
 
 //not using setters and getters, i can user the internal javascript ones if necessary
 
-messenger.prototype.login =  function() {
-	console.log("logged in with: ", config.phone);
-	this.emit("explode")
+
+messenger.prototype.onEnd = function() {
+	this.emit("end");
 };
+
+messenger.prototype.newConnection = function() {
+	//make the connection and log in
+	if (this._connection) {
+		this._connection.close();
+	}
+	var that = this;
+	   	d    = when.defer();
+
+	var tlsConn = this._connection = tls.connect(port,server,function() {
+		tlsConn.setEncoding('utf8');
+		that.emit("connected");
+
+		that.parser = new Parser(tlsConn);
+		tlsConn.on('data',function(chunk) {
+			that.parser.dataReceived(chunk);
+		});
+		tlsConn.on('end',that.onEnd);
+		that.parser._helloDeferred.promise.then(function() {
+			d.resolve();
+		});
+	})
+
+	tlsConn.on('error', function(error) {
+		d.reject(error);
+	});
+
+	return d.promise;
+};
+
+messenger.prototype.select = function(box) {
+	return this.parser.select(box);
+}
+
+messenger.prototype.login =  function() {
+	//make a connection first when we log in
+	var that = this;
+	return this.newConnection()
+		.then(function() {
+			return that.parser.login(that.config.phone, that.config.loginToken);
+		})
+};
+
+messenger.prototype.listConversations = function() {
+	return this.parser.listConversations();
+}
 
 module.exports = messenger;

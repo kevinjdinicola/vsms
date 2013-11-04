@@ -13,6 +13,8 @@ var config = {
 };
 
 
+
+
 //say whats up
 console.log("VSMS 0.0.1 Tester.\nThis will take you through the creation and destruction of an account of access messages");
 
