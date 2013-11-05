@@ -77,4 +77,13 @@ messenger.prototype.listConversations = function() {
 	return this.parser.listConversations();
 }
 
+messenger.prototype.fetchMessage = function(messageUid) {
+	return this.parser.fetchMessage(messageUid);
+}
+
+messenger.prototype.listMessages = function(phone, latestMessageUid, number) {
+	return this.parser.listMessages(phone, latestMessageUid, number);
+}
+
+
 module.exports = messenger;
