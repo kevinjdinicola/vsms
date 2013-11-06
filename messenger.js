@@ -40,17 +40,14 @@ messenger.prototype.newConnection = function() {
 	   	d    = when.defer();
 
 	var tlsConn = this._connection = tls.connect(port,server,function() {
-		tlsConn.setEncoding('utf8');
 		that.emit("connected");
 
 		that.parser = new Parser(tlsConn);
 		tlsConn.on('data',function(chunk) {
 			that.parser.dataReceived(chunk);
-		});
-		tlsConn.on('end',that.onEnd);
-		that.parser._helloDeferred.promise.then(function() {
 			d.resolve();
 		});
+		tlsConn.on('end',that.onEnd);
 	})
 
 	tlsConn.on('error', function(error) {

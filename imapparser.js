@@ -6,6 +6,7 @@ var when   = require('when'),
 
 
 var CRLF  = "\r\n",
+		CLRF_BINARY = 2573,
 		HELLO_RESPONSE = "* OK IMAP4rev1";
 
 var packetIdFromLine = function(line) {
@@ -34,11 +35,10 @@ var parser = function(connection) {
 	this._connection = connection;
 	this._commandCounter = 1;
 	this._commandDeferMap = {};
-	this._blobMap = {};
-	this._currentPacket = [];
-	this._currentLine   = '';
-	this._currentBlob   = '';
-	this._helloDeferred = when.defer();
+	this.lineStack  = [];
+	this.blobLeft = 0;
+	this.lineBuffer = null;
+	this.blobBuffer = null;
 }
 util.inherits(parser, events.EventEmitter);
 
@@ -67,7 +67,72 @@ parser.prototype.genericPacketProcessor = function(data) {
 	}
 }
 
+parser.prototype.processLine = function(buffer) {
+	var strLine = buffer.toString("utf8");
+	if (strLine.indexOf("*") == 0 || strLine.indexOf("EA") == 0) {
+		this.lineStack.push(strLine);
+		if (strLine.indexOf("EA") == 0) {
+			var id = strLine.substring(2,strLine.indexOf(" "));
+			var d = this._commandDeferMap[id];
+			if (d) {
+				d.resolve(this.lineStack);
+				console.log(this.lineStack);
+				this.lineStack = [];
+				this._commandDeferMap[id] = undefined;
+			}
+		}
+	}
+}
+
+
+
+
 parser.prototype.dataReceived = function(chunk) {
+	var chunkLen = chunk.length;
+			curPos    = 0;
+
+
+			//while we have more data to read
+	while (curPos < chunkLen) {
+
+		if (!this.blobLeft) {
+			//keep searching until you find the new line.
+			for (var searchIndex = curPos; searchIndex < chunkLen-1; searchIndex++) {
+				if (chunk.readInt16LE(searchIndex) == CLRF_BINARY) {
+					//we found a line break!  read all of this into a line!
+					var lineEndBuffer  = new Buffer(searchIndex - curPos);
+					chunk.copy(lineEndBuffer, 0, curPos, searchIndex); //search index finds it on the first byte, so copy the second too!
+					this.processLine(lineEndBuffer);
+					curPos = searchIndex+2; //start again past where i stopped
+					break;
+				} else if  (searchIndex == chunkLen-2) {
+					curPos = chunkLen;
+				}
+			}
+
+		} else {
+			//so you want to read a blob?
+			if (chunkLeft >= this.blobLeft) {
+				//finish reading the entire blob, then we loop back around and continue reading data
+				this.chunk.copy(this.blobBuffer,this.blobBuffer.length-this.blobLeft, curPos, curPos + this.blobLeft);
+				//finish off the blob
+				this.blobLeft = 0;
+				//increment curPos by blobLeft, because thats how muc hwe jsut read
+				curPos += this.blobLeft;
+			} else {
+				//blob needs more than this chunk provides!  read it all into bloby!
+				this.chunk.copy(this.blobBuffer,this.blobBuffer.length-this.blobLeft, curPos, chunkLen);
+				//subtract how much we read from how much is left from the blob
+				this.blobLeft -= chunkLen - curPos;
+				//increment the current position by how much we read.  Since this branch of the logic
+				//means the chunk didn't have enough in it for our blob Buffer, we read everything.
+				curPos = chunkLen;
+			}
+		}
+	}
+}
+
+parser.prototype.dataReceivedd = function(chunk) {
 
 	console.log(">> " + chunk);
 	if (chunk.indexOf(HELLO_RESPONSE) > -1) {
