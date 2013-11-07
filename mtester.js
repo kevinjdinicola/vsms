@@ -1,7 +1,8 @@
 var vsms   = require("./vsms"),
 		config = require("./phoneConfig.json"),
 		when   = require('when'),
-		readline   = require('readline');
+		readline   = require('readline'),
+		fs     = require("fs");
 
 var Messenger = vsms.messenger;
 
@@ -38,7 +39,18 @@ iphone.login()
 		return iphone.fetchMessage(messages[0].messageUid);
 	})
 	.then(function(message) {
+		console.log("Your last message:")
+		console.log(message.Header.From + " -> " + message.Header.To + "\n" + message.Text);
 		console.log(message);
+		if (message.Thumbnails.length) {
+			console.log("Also, your message has " + message.Thumbnails.length + " attachments");
+			var th = message.Thumbnails;
+			for (var i = 0, len = th.length; i < len; i++) {
+				console.log(th[i].Headers)
+				console.log("Saving " + th[i].Headers['Content-Location'] + "...");
+				fs.writeFileSync(th[i].Headers['Content-Location'], th[i].Content);				
+			}
+		}
 	})
 	.then(function() {
 		console.log("Finished!");

@@ -1,8 +1,9 @@
-var util   = require("util"),
-		events = require("events"),
-		when   = require("when"),
-		tls    = require('tls'),
-		Parser = require("./imapparser");
+var util        = require("util"),
+		events      = require("events"),
+		when        = require("when"),
+		tls         = require('tls'),
+		Parser      = require("./imapparser"),
+		TextMessage = require("./textMessage");
 
 var CRLF  = "\r\n",
     port = 993,
@@ -184,12 +185,13 @@ messenger.prototype.fetchMessage = function(messageUid) {
 		"UID FETCH", 
 		messageUid,
 		"(FLAGS XRECIPSTATUS BODY.PEEK[HEADER+TEXT+THUMBNAILS])"
-	)).then(function(response) {
-		return when.resolve(response[1].toString("utf8"));
+	)).then(function(lines) {
+		var text = TextMessage.createFromBuffer(lines[1]);
+		return when.resolve(text);
 	})
 }
 
-messenger.prototype.sendMessage = function(messageBody) {
+messenger.prototype.sendMessage = function(messageBuffer) {
 	
 }
 
