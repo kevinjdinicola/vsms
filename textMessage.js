@@ -13,7 +13,11 @@ textMessage.prototype.getRawData = function() {
 }
 
 textMessage.createFromRaw = function(textResponse) {
-	var tm = new textMessage();
+	var m = new textMessage();
+	m.from = '';
+	m.to = '';
+	m.date = '';
+
 }
 
 util.inherits(textMessage, events.EventEmitter);

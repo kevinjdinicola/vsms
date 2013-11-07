@@ -1,7 +1,6 @@
 var when   = require('when'),
 		util   = require('util'),
-		events = require('events'),
-		textMessage = require('./textMessage');
+		events = require('events');
 
 
 
@@ -16,8 +15,8 @@ var packetIdFromLine = function(line) {
 var shouldAddLine  = function(line) {
 	return line.indexOf("*") == 0 || line.indexOf("EA") == 0;
 }
+
 var lineEndsPacket = function(line) {
-	// console.log("line",line,"ends packet:",line.indexOf("EA"));
 	return line.indexOf("EA") == 0;
 }
 
@@ -31,10 +30,11 @@ var lineRequestsBlob = function(line) {
 }
 
 
-var parser = function(connection) {
-	this._connection = connection;
-	this._commandCounter = 1;
-	this._commandDeferMap = {};
+var parser = function(stream) {
+	var that = this;
+	stream.on('data', function() {
+			that.dataReceived.apply(that,arguments);
+		});
 	this.lineStack  = [];
 	this.blobLeft = 0;
 	this.lineBuffer = null;
@@ -42,30 +42,6 @@ var parser = function(connection) {
 }
 util.inherits(parser, events.EventEmitter);
 
-parser.prototype.executeCommand = function(command, args) {
-	var d         = when.defer(),
-			cnt       = this.getCounter(),
-			cmdString = "EA"+cnt + " " + command + " " + args + CRLF;
-
- //  d.packetId = cnt;
-	// d.testProperty = "kevin"	;
-	this._commandDeferMap[cnt] = d;
-	console.log("<< "+cmdString);
-	this.getConnection().write(cmdString);
-
-	return d.promise
-		.then(this.genericPacketProcessor);
-}
-
-parser.prototype.genericPacketProcessor = function(data) {
-	if (data && data.length && data[data.length-1].indexOf("OK") > -1) {
-		console.log("Packet OK:",data[data.length-1]);
-		return when.resolve(data);
-	} else {
-		console.log("Packet NO:",data[data.length-1]);
-		return when.reject(data);
-	}
-}
 
 parser.prototype.processLine = function(buffer) {
 	//get the text line from the buffer
@@ -88,15 +64,10 @@ parser.prototype.processLine = function(buffer) {
 		//should i empty out the linestack? i know the req id from EA#
 		if (isTag) {
 			var id = strLine.substring(2,strLine.indexOf(" "));
-			var d = this._commandDeferMap[id];
-			if (d) {
-				//push out my line stack to whoever's asking
-				d.resolve(this.lineStack);
-				console.log(this.lineStack);
-				//empty it out
-				this.lineStack = [];
-				this._commandDeferMap[id] = undefined;
-			}
+			//send an event with the ID and the packet info
+			this.emit("packet", id, this.lineStack);
+			//Reset the lineStack to nothing
+			this.lineStack = [];
 		}
 	}
 }
@@ -104,7 +75,7 @@ parser.prototype.processLine = function(buffer) {
 parser.prototype.dataReceived = function(chunk) {
 	var chunkLen = chunk.length;
 			curPos    = 0;
-
+	//console.log(chunk.toString("utf8"));
 
 			//while we have more data to read
 	while (curPos < chunkLen) {
@@ -115,6 +86,7 @@ parser.prototype.dataReceived = function(chunk) {
 				if (chunk.readInt16LE(searchIndex) == CLRF_BINARY) {
 					//we found a line break!  read all of this into a line!
 					var lineEndBuffer  = new Buffer(searchIndex - curPos);
+					//Put that into a new buffer!
 					chunk.copy(lineEndBuffer, 0, curPos, searchIndex); //search index finds it on the first byte, so copy the second too!
 					
 					var fullLineBuffAry = [lineEndBuffer];
@@ -125,6 +97,7 @@ parser.prototype.dataReceived = function(chunk) {
 
 					this.processLine(Buffer.concat(fullLineBuffAry));
 					curPos = searchIndex+2; //start again past where i stopped
+					//get out of the for loop, i only want to search until i find it once!
 					break;
 				} else if  (searchIndex == chunkLen-2) {
 					//everything from the last current position to the end of the chunk couldnt be
@@ -143,7 +116,7 @@ parser.prototype.dataReceived = function(chunk) {
 			if (chunkLen-curPos >= this.blobLeft) {
 				//finish reading the entire blob, then we loop back around and continue reading data
 				
-				console.log("filling in parts from " + (this.blobBuffer.length-this.blobLeft) + " to " + (this.blobBuffer.length-this.blobLeft + (curPos + this.blobLeft-curPos)) + " of " + this.blobBuffer.length);
+				// console.log("filling in parts from " + (this.blobBuffer.length-this.blobLeft) + " to " + (this.blobBuffer.length-this.blobLeft + (curPos + this.blobLeft-curPos)) + " of " + this.blobBuffer.length);
 				chunk.copy(this.blobBuffer,this.blobBuffer.length-this.blobLeft, curPos, curPos + this.blobLeft);
 				//finish off the blob
 				this.blobLeft = 0;
@@ -156,7 +129,7 @@ parser.prototype.dataReceived = function(chunk) {
 				curPos += this.blobLeft;
 			} else {
 				//blob needs more than this chunk provides!  read it all into bloby!
-				console.log("filling in parts from " + (this.blobBuffer.length-this.blobLeft) + " to " + (this.blobBuffer.length-this.blobLeft + (chunkLen-curPos)) + " of " + this.blobBuffer.length);
+				// console.log("filling in parts from " + (this.blobBuffer.length-this.blobLeft) + " to " + (this.blobBuffer.length-this.blobLeft + (chunkLen-curPos)) + " of " + this.blobBuffer.length);
 				chunk.copy(this.blobBuffer,this.blobBuffer.length-this.blobLeft, curPos, chunkLen);
 				//subtract how much we read from how much is left from the blob
 				this.blobLeft -= chunkLen - curPos;
@@ -166,81 +139,6 @@ parser.prototype.dataReceived = function(chunk) {
 			}
 		}
 	}
-}
-
-parser.prototype.getConnection = function() {
-	return this._connection;
-}
-
-parser.prototype.getCounter = function() {
-	return this._commandCounter++;
-}
-
-parser.prototype.listConversations = function(number) {
-	number = number || 20;
-	return this.executeCommand("XCONV LIST", "UID * NUMGROUPS " + number)
-		.then(function(response) {
-			var conversations = [];
-			for (var i = 0; i < response.length-1; i++) {
-				var sp = response[i].split(" ");
-				conversations.push({
-					phone: sp[4],
-					latestMessageUid  : sp[6]
-				})
-			}
-			return when.resolve(conversations);
-		})
-}
-
-parser.prototype.listMessages = function(participantUid, latestMessageUid, number) {
-	number = number || 25;
-	return this.executeCommand("XCONV FETCH",
-		['PARTICIPANTID',
-		 participantUid,
-		 'UID',
-		 latestMessageUid,
-		 'NUMMSGS',
-		 number
-		].join(" "))
-		.then( function(response) {
-			var messages = [];
-			for (var i = 0; i < response.length-1; i++) {
-				var sp = response[i].split(" ");
-				messages.push({
-					phone: sp[5],
-					messageUid  : sp[7].substring(0,sp[7].length-1)
-				})
-			}
-			return when.resolve(messages);
-		});
-}
-
-parser.prototype.fetchMessage = function(messageUid) {
-	return this.executeCommand("UID FETCH", messageUid + " (FLAGS XRECIPSTATUS BODY.PEEK[HEADER+TEXT+THUMBNAILS])")
-		.then(function(response) {
-			return when.resolve(response);
-		});
-}
-
-parser.prototype.fetchAttachments = function(messageUid) {
-	return this.executeCommand("UID FETCH", messageUid + " (FLAGS BODY.PEEK[ATTACHMENTS])")
-		.then(function(response) {
-			//parse that shit
-		});
-
-}
-
-parser.prototype.sendMessage = function(toPhone, contents) {
-
-}
-
-parser.prototype.select = function(messageBox) {
-	messageBox = messageBox || "INBOX";
-	return this.executeCommand("SELECT", messageBox);
-}
-
-parser.prototype.login = function(username, password) {
-	return this.executeCommand("LOGIN ", username + " " + password);
 }
 
 
