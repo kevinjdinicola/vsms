@@ -36,5 +36,7 @@ iphone.login()
 		console.log(msg);
 		return iphone.fetchMessage(msg.messageUid);
 	}).then(function(msg) {
-		console.log(msg.getRawData());
+		console.log(msg[1].toString("utf8"));
+		console.log("done");
+		console.log(msg);
 	})

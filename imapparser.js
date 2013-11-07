@@ -25,7 +25,7 @@ var lineRequestsBlob = function(line) {
 	var match = line.match(/\{[0-9]+\}$/)
 	if (match) {
 		match = match[0];
-		return match.substring(1,match.length-1);
+		return parseInt(match.substring(1,match.length-1),10);
 	}
 	return null;
 }
@@ -68,24 +68,38 @@ parser.prototype.genericPacketProcessor = function(data) {
 }
 
 parser.prototype.processLine = function(buffer) {
-	var strLine = buffer.toString("utf8");
-	if (strLine.indexOf("*") == 0 || strLine.indexOf("EA") == 0) {
+	//get the text line from the buffer
+	var strLine = buffer.toString("utf8"),
+			blobLen = lineRequestsBlob(strLine),
+			isUntag = strLine.indexOf("*") == 0,
+			isTag   = strLine.indexOf("EA") == 0
+
+	//is it one of the 2 cases where I add it?
+	if (isUntag || isTag) {
+		//add the line to our line stack
 		this.lineStack.push(strLine);
-		if (strLine.indexOf("EA") == 0) {
+
+		//Do i need a blob buffer set up?  If i do, its set right here with blob len.
+		if (blobLen) {
+			this.blobLeft = blobLen;
+			this.blobBuffer = new Buffer(blobLen);
+		}
+
+		//should i empty out the linestack? i know the req id from EA#
+		if (isTag) {
 			var id = strLine.substring(2,strLine.indexOf(" "));
 			var d = this._commandDeferMap[id];
 			if (d) {
+				//push out my line stack to whoever's asking
 				d.resolve(this.lineStack);
 				console.log(this.lineStack);
+				//empty it out
 				this.lineStack = [];
 				this._commandDeferMap[id] = undefined;
 			}
 		}
 	}
 }
-
-
-
 
 parser.prototype.dataReceived = function(chunk) {
 	var chunkLen = chunk.length;
@@ -102,26 +116,48 @@ parser.prototype.dataReceived = function(chunk) {
 					//we found a line break!  read all of this into a line!
 					var lineEndBuffer  = new Buffer(searchIndex - curPos);
 					chunk.copy(lineEndBuffer, 0, curPos, searchIndex); //search index finds it on the first byte, so copy the second too!
-					this.processLine(lineEndBuffer);
+					
+					var fullLineBuffAry = [lineEndBuffer];
+					if (this.lineBuffer) {
+						fullLineBuffAry.unshift(this.lineBuffer);
+						this.lineBuffer = null;
+					}
+
+					this.processLine(Buffer.concat(fullLineBuffAry));
 					curPos = searchIndex+2; //start again past where i stopped
 					break;
 				} else if  (searchIndex == chunkLen-2) {
+					//everything from the last current position to the end of the chunk couldnt be
+					//"lined", so stuff it in our line buffer 
+					var lineBufAry = [chunk.slice(curPos, chunkLen)];
+					if (this.lineBuffer) {
+						lineBufAry.unshift(this.lineBuffer)
+					}
 					curPos = chunkLen;
+					this.lineBuffer = Buffer.concat(lineBufAry);
 				}
 			}
 
 		} else {
 			//so you want to read a blob?
-			if (chunkLeft >= this.blobLeft) {
+			if (chunkLen-curPos >= this.blobLeft) {
 				//finish reading the entire blob, then we loop back around and continue reading data
-				this.chunk.copy(this.blobBuffer,this.blobBuffer.length-this.blobLeft, curPos, curPos + this.blobLeft);
+				
+				console.log("filling in parts from " + (this.blobBuffer.length-this.blobLeft) + " to " + (this.blobBuffer.length-this.blobLeft + (curPos + this.blobLeft-curPos)) + " of " + this.blobBuffer.length);
+				chunk.copy(this.blobBuffer,this.blobBuffer.length-this.blobLeft, curPos, curPos + this.blobLeft);
 				//finish off the blob
 				this.blobLeft = 0;
-				//increment curPos by blobLeft, because thats how muc hwe jsut read
+
+				//add it to the line stack, because, why not!
+				this.lineStack.push(this.blobBuffer);
+				this.blobBuffer = null;
+
+				//increment curPos by blobLeft, because thats how much we just read
 				curPos += this.blobLeft;
 			} else {
 				//blob needs more than this chunk provides!  read it all into bloby!
-				this.chunk.copy(this.blobBuffer,this.blobBuffer.length-this.blobLeft, curPos, chunkLen);
+				console.log("filling in parts from " + (this.blobBuffer.length-this.blobLeft) + " to " + (this.blobBuffer.length-this.blobLeft + (chunkLen-curPos)) + " of " + this.blobBuffer.length);
+				chunk.copy(this.blobBuffer,this.blobBuffer.length-this.blobLeft, curPos, chunkLen);
 				//subtract how much we read from how much is left from the blob
 				this.blobLeft -= chunkLen - curPos;
 				//increment the current position by how much we read.  Since this branch of the logic
@@ -130,86 +166,6 @@ parser.prototype.dataReceived = function(chunk) {
 			}
 		}
 	}
-}
-
-parser.prototype.dataReceivedd = function(chunk) {
-
-	console.log(">> " + chunk);
-	if (chunk.indexOf(HELLO_RESPONSE) > -1) {
-		if (!this._receivedHello) {
-			this._helloDeferred.resolve();
-			this._receivedHello = true;
-		}
-		return;
-	}
-	var blob = this._currentBlob;
-	var chunkLength = chunk.length;
-
-	var lineEnding = chunk.indexOf(CRLF);
-
-
-	if (blob) {
-		if (chunkLength >= blob) {
-			//finish our blob and allow the loop to go on!
-			this._currentLine += chunk.substring(0,blob);
-				// console.log("BLOBLOG: ",this._currentLine.length);
-			this._currentPacket.push(this._currentLine);
-			this._currentLine = '';
-			blob = null;
-			this._currentBlob = null;
-		} else {
-			//copy what we can! then set whats left in a flag!
-			this._currentLine += chunk;
-			blob -= chunkLength;
-			this._currentBlob = blob;
-			return;
-		}
-	}
-
-	while (lineEnding > -1 && !blob) {
-		//add everything up till the packet ending
-		this._currentLine += chunk.substring(0,lineEnding);
-		//add the last packet ending line
-		if (shouldAddLine(this._currentLine)) {
-			this._currentPacket.push(this._currentLine);
-
-			blob = lineRequestsBlob(this._currentLine);
-
-			if (lineEndsPacket(this._currentLine)) {
-				//launch the packet
-				var packetDeferred = this._commandDeferMap[packetIdFromLine(this._currentLine)];
-				if (packetDeferred) {
-					packetDeferred.resolve(this._currentPacket);
-					this._currentPacket = [];
-				}
-			}
-		}
-
-		chunk = chunk.substring(lineEnding+CRLF.length);
-		lineEnding = chunk.indexOf(CRLF)
-		this._currentLine = '';
-
-		//try and empty blob.  if we can empty blob with our current data, that means more
-		//'lines' can be parsed.  we want to parse those lines
-		if (blob) {
-			if (chunkLength >= blob) {
-				//finish our blob and allow the loop to go on!
-				this._currentLine = chunk.substring(0,blob);
-				blob = null;
-				// console.log("BLOBLOG: ",this._currentLine.length);
-				this._currentPacket.push(this._currentLine);
-				this._currentLine = '';
-				this._currentBlob = null;
-			} else {
-				//copy what we can! then set whats left in a flag!
-				this._currentLine = chunk;
-				blob -= chunkLength;
-				this._currentBlob = blob;
-			}
-		}
-	}
-
-	this._currentLine += chunk;
 }
 
 parser.prototype.getConnection = function() {
@@ -262,10 +218,7 @@ parser.prototype.listMessages = function(participantUid, latestMessageUid, numbe
 parser.prototype.fetchMessage = function(messageUid) {
 	return this.executeCommand("UID FETCH", messageUid + " (FLAGS XRECIPSTATUS BODY.PEEK[HEADER+TEXT+THUMBNAILS])")
 		.then(function(response) {
-			response[1] = Buffer(response[1],'ascii').toString('ascii');
-			var msg = new textMessage(response[1]);
-			console.log("ASDFASDF",msg)
-			return when.resolve(msg);
+			return when.resolve(response);
 		});
 }
 
