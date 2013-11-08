@@ -191,8 +191,32 @@ messenger.prototype.fetchMessage = function(messageUid) {
 	})
 }
 
-messenger.prototype.sendMessage = function(messageBuffer) {
-	
+messenger.prototype.fetchAttachments = function(messageUid) {
+	return this.exec(c(
+		"UID FETCH", 
+		messageUid,
+		"(FLAGS XRECIPSTATUS BODY.PEEK[ATTACHMENTS])"
+	)).then(function(lines) {
+		var text = TextMessage.createFromBuffer(lines[1]);
+		return when.resolve(text);
+	})
+}
+
+messenger.prototype.sendMessage = function(textMessage) {
+	//setup the from here!
+	textMessage.From = this.config.phone;
+	var msg = textMessage.serialize(),
+			that = this;
+
+	this.parser.once('lineReceived', function(line) {
+		if (line.indexOf("+") == 0) {
+			//it probably says '+ Ready for literal data', just send it!
+			that._connection.write(msg);
+			that._connection.write("\r\n\n");
+		}
+	});
+
+	return this.exec("APPEND INBOX (\\Seen $sent) {" + Buffer.byteLength(msg,"utf8") + "}" + CRLF);
 }
 
 module.exports = messenger;

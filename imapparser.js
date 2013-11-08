@@ -1,7 +1,7 @@
 var when   = require('when'),
 		util   = require('util'),
-		events = require('events');
-
+		events = require('events'),
+		fs     = require('fs');
 
 
 var CRLF  = "\r\n",
@@ -50,6 +50,8 @@ parser.prototype.processLine = function(buffer) {
 			isUntag = strLine.indexOf("*") == 0,
 			isTag   = strLine.indexOf("EA") == 0
 
+	this.emit("lineReceived",strLine);
+
 	//is it one of the 2 cases where I add it?
 	if (isUntag || isTag) {
 		//add the line to our line stack
@@ -75,7 +77,7 @@ parser.prototype.processLine = function(buffer) {
 parser.prototype.dataReceived = function(chunk) {
 	var chunkLen = chunk.length;
 			curPos    = 0;
-	//console.log(chunk.toString("utf8"));
+	// console.log(chunk.toString("utf8"));
 
 			//while we have more data to read
 	while (curPos < chunkLen) {
