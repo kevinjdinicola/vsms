@@ -45,12 +45,12 @@ if (argv.n && argv.m) {
 			// 	console.log(line);
 			// });
 			// console.log('waiting on idle lines!');
-			iphone.on("update", function() {
+			iphone.on("newMessage", function() {
 				console.log("A new message was received!");
 			})
-			iphone.idle();
+			iphone.idle(10000);
 			
-		})
+		}).then(null,function(e){console.log(e)})
 } else {
 	//demo mode!
 	console.log("Logging in...")

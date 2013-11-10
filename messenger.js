@@ -17,6 +17,13 @@ var trimEnd = function(str, len) {
 	return str.substring(0,str.length-len);
 }
 
+Function.prototype.proxy = function(proxyThis) {
+	var fn = this;
+	return function() {
+		fn.apply(proxyThis, arguments)
+	}
+}
+
 /*
 --Note: a config object is required to create a messenger.  it looks like this:
 
@@ -140,9 +147,10 @@ messenger.prototype.didReceivePacket = function(id, packet) {
 	}
 }
 
+
 var didReceiveUpdateLine = function(line) {
-	if (line.indexOf("* XUPDATE") == 0) {
-		this.emit("update");
+	if (line.indexOf("* XUPDATE") > -1) {
+		this.emit("newMessage");
 	}
 }
 
@@ -154,6 +162,7 @@ messenger.prototype.idleOff = function() {
 		this._connection.write("DONE" + CRLF);
 		console.log("attempting to kill idling");
 		return this._idling.then(function(){
+			that.removeListener("lineReceived", that._updateLineListener);
 			console.log("successfully killed idling!");
 			//that command has been resolved, means we arent idling anymore
 			that._idling = null;
@@ -168,11 +177,12 @@ messenger.prototype.idle = function(timeout) {
 	this.parser.once("lineReceived", function(line) {
 		if (line.indexOf("+ Idling") == 0) {
 			console.log("successfulyl idling!");
-			that.parser.on("lineReceived", didReceiveUpdateLine)
+			that._updateLineListener = didReceiveUpdateLine.proxy(that);
+			that.parser.on("lineReceived", that._updateLineListener);
 
 			//idling worked, so set up the loop!
 			if (timeout) {
-				this._idlingTimeout = setTimeout(function() {
+				that._idlingTimeout = setTimeout(function() {
 					console.log("tmeout fired!");
 					that.idleOff()
 						.then(function() {
