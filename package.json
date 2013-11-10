@@ -1,6 +1,6 @@
 {
   "name": "vsms",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "A library for connecting to Verison's private integrated messaging service API.",
   "main": "vsms.js",
   "dependencies": {
