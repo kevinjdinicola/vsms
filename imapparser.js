@@ -77,7 +77,7 @@ parser.prototype.processLine = function(buffer) {
 parser.prototype.dataReceived = function(chunk) {
 	var chunkLen = chunk.length;
 			curPos    = 0;
-	console.log('>> ', chunk.toString("utf8"));
+	// console.log('>> ', chunk.toString("utf8"));
 
 			//while we have more data to read
 	while (curPos < chunkLen) {

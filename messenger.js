@@ -99,7 +99,7 @@ messenger.prototype.exec = function(command) {
 			  cmdString = "EA"+cnt + " " + command + CRLF;
 
 		this.commandDeferMap[cnt] = d;
-		console.log("<< ",cmdString);
+		// console.log("<< ",cmdString);
 		this._connection.write(cmdString);
 		return d.promise.then(this.packetPreprocessor);	
 	}
@@ -151,8 +151,8 @@ messenger.prototype.idleOff = function() {
 	if (this._idling) {
 		clearTimeout(this._idlingTimeout);
 		//write a command to finally resolve the initial idle command
-		this._connection.write("DONE" + CRLF + "\n");
-		console.log(" attempting to kill idling");
+		this._connection.write("DONE" + CRLF);
+		console.log("attempting to kill idling");
 		return this._idling.then(function(){
 			console.log("successfully killed idling!");
 			//that command has been resolved, means we arent idling anymore

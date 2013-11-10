@@ -45,6 +45,9 @@ if (argv.n && argv.m) {
 			// 	console.log(line);
 			// });
 			// console.log('waiting on idle lines!');
+			iphone.on("update", function() {
+				console.log("A new message was received!");
+			})
 			iphone.idle();
 			
 		})
