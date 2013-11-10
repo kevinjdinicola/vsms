@@ -33,6 +33,21 @@ if (argv.n && argv.m) {
 			console.error(e);
 			process.exit(1);
 		})
+
+} else if (argv.i) {
+	console.log('IDLE MODE TEST!');
+	iphone.login()
+		.then(function() {
+			return iphone.select();
+		})
+		.then(function() {
+			// iphone.parser.on('lineReceived', function(line) {
+			// 	console.log(line);
+			// });
+			// console.log('waiting on idle lines!');
+			iphone.idle();
+			
+		})
 } else {
 	//demo mode!
 	console.log("Logging in...")

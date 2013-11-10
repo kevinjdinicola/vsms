@@ -41,10 +41,6 @@ var messenger = function(config) {
 util.inherits(messenger, events.EventEmitter);
 
 
-messenger.prototype.onEnd = function() {
-	this.emit("end");
-};
-
 messenger.prototype.connect = function() {
 	//make the connection and log in
 	if (this._connection) {
@@ -66,7 +62,9 @@ messenger.prototype.connect = function() {
 			d.resolve();
 		});
 
-		tlsConn.on('end',that.onEnd);
+		tlsConn.on('end',function() {
+			this.emit("end");
+		});
 	})
 
 	tlsConn.on('error', function(error) {
@@ -88,14 +86,23 @@ messenger.prototype.getCounter = function() {
 
 
 messenger.prototype.exec = function(command) {
-	var d       = when.defer(),
-	 	  cnt       = this.getCounter(),
-		  cmdString = "EA"+cnt + " " + command + CRLF;
+	//if im idling, i need to defer the exec command
+	if (this._idling) {
+		//only run the command (and return its deferred)
+		//once idle is off!
+		return this.idleOff().then(function() {
+			return this.exec(command);
+		});
+	} else {
+		var d       = when.defer(),
+		 	  cnt       = this.getCounter(),
+			  cmdString = "EA"+cnt + " " + command + CRLF;
 
-	this.commandDeferMap[cnt] = d;
-	// console.log("<< ",cmdString);
-	this._connection.write(cmdString);
-	return d.promise.then(this.packetPreprocessor);
+		this.commandDeferMap[cnt] = d;
+		console.log("<< ",cmdString);
+		this._connection.write(cmdString);
+		return d.promise.then(this.packetPreprocessor);	
+	}
 }
 
 messenger.prototype.packetPreprocessor = function(packet) {
@@ -132,6 +139,56 @@ messenger.prototype.didReceivePacket = function(id, packet) {
 		d.resolve(packet);
 	}
 }
+
+var didReceiveUpdateLine = function(line) {
+	if (line.indexOf("* XUPDATE") == 0) {
+		this.emit("update");
+	}
+}
+
+messenger.prototype.idleOff = function() {
+	var that = this;
+	if (this._idling) {
+		clearTimeout(this._idlingTimeout);
+		//write a command to finally resolve the initial idle command
+		this._connection.write("DONE" + CRLF + "\n");
+		console.log(" attempting to kill idling");
+		return this._idling.then(function(){
+			console.log("successfully killed idling!");
+			//that command has been resolved, means we arent idling anymore
+			that._idling = null;
+		})
+	}
+	return when.resolve();
+}
+
+messenger.prototype.idle = function(timeout) {
+	var that = this;
+	timeout = timeout || 115000;
+	this.parser.once("lineReceived", function(line) {
+		if (line.indexOf("+ Idling") == 0) {
+			console.log("successfulyl idling!");
+			that.parser.on("lineReceived", didReceiveUpdateLine)
+
+			//idling worked, so set up the loop!
+			if (timeout) {
+				this._idlingTimeout = setTimeout(function() {
+					console.log("tmeout fired!");
+					that.idleOff()
+						.then(function() {
+							console.log("attempting to re-idle with ", timeout);
+							//idleOff only finishes when idle resolves.  then we wanna idle again
+							that.idle(timeout);
+						});
+				},timeout);
+			}
+
+		}
+	})
+	console.log("Ran the idle command!");
+	return this._idling = this.exec("IDLE");
+};
+
 
 messenger.prototype.select = function(box) {
 	box = box || "INBOX";
