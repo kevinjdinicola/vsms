@@ -18,17 +18,20 @@ var genRandom = function(length, base) {
 }
 
 var extractHeader = function(buffer, start) {
-	//Headers are seperated by the double new lines, \r\n\r\n
-	var i            = start || 0;
-	//minus 3 because im reading 4 bytes at a time
-	while (i < buffer.length-3) {
-		if (buffer.readInt32LE(i) == DOUBLE_CLRF_BINARY) {
-			//eurika!
-			return buffer.slice(start,i);
-		}
-		i++;
-	}
-	return null;
+  //Headers are seperated by the double new lines, \r\n\r\n
+  var i            = start || 0;
+  //minus 3 because im reading 4 bytes at a time
+  while (i < buffer.length-3) {
+    if (buffer.readInt32LE(i) == DOUBLE_CLRF_BINARY) {
+      //eurika!
+      return buffer.slice(start,i);
+    } else if (i+2 == buffer.length-2 && buffer.readInt16LE(i+2) == CLRF_BINARY) {
+    	// sometimes there is just a \r\n at the end of a header
+      return buffer.slice(start, i+2);
+    }
+    i++;
+  }
+  return null;
 }
 
 var findBoundary = function(buffer,boundary,start) {
@@ -65,7 +68,7 @@ var parseHeader = function(header) {
 				//it must be a boundary, extract that fucker
 				//stupid piece of shit, the boundaries used have
 				//two more -'s than the boundaries given!
-				headObj.boundary = "--" + hline[0].split("\"")[1];	
+				headObj.boundary = "--" + hline[0].split("\"")[1];
 			}
 		}
 	}
@@ -105,7 +108,7 @@ textMessage.prototype.serialize = function() {
 		"--"+outerBoundary+"--",
 		""];
 
-	
+
 	return output.join(CRLF);
 }
 
@@ -129,7 +132,7 @@ textMessage.createFromBuffer = function(buffer) {
 	curPos += m.Header.length+4;//4 for the crlfcrlf that defines the header
 
 	m.Header = parseHeader(m.Header);
-	
+
 	boundary = [new Buffer(m.Header.boundary)];
 
 	if (m.Header['X-Section-ID']) {
@@ -139,7 +142,7 @@ textMessage.createFromBuffer = function(buffer) {
 	//Start us off at the first header position
 	curPos = findBoundary(buffer,boundary[0],curPos) + boundary[0].length + 2;
 	//loop through the variable length multiparts.  Keep going while
-	//I can still search through a boundary.  If i dont 
+	//I can still search through a boundary.  If i dont
 	//have enough left for 2 boundaries (gotta start and end)
 	//then quit! you're done!
 	while (curPos < buffer.length) {
@@ -151,11 +154,11 @@ textMessage.createFromBuffer = function(buffer) {
 		partHeader = parseHeader(partHeader);
 
 		if (partHeader['Content-Type'] == 'multipart/mixed; ') {
-			//I just read a header and there _IS_ no content.  
+			//I just read a header and there _IS_ no content.
 			//all that is waiting for me at curpos (instead of content)
-			//is the boundary i just read from content-type.  so skip ahead of that 
+			//is the boundary i just read from content-type.  so skip ahead of that
 			//that boundry, reposition at the beginning of the content header, at eat it up.
-			
+
 			//we need to add this boundary as first in our boundary list so we can keep track
 			//of what multipart/mixed things we're in
 			multipartSectionId.unshift(partHeader['X-Section-ID']);
@@ -163,7 +166,7 @@ textMessage.createFromBuffer = function(buffer) {
 			curPos += boundary[0].length + 2; //2 for the newline which brings us to a new piece of content
 
 		} else {
-			//if i slice from where i am to where i find the next buffer, 
+			//if i slice from where i am to where i find the next buffer,
 			//thats my part buffer!  minus 2 because the boundary is on a "newline"
 			//from the end of the content.  I dont want that
 			partBuffer = buffer.slice(curPos, findBoundary(buffer,boundary[0],curPos)-2);
@@ -174,7 +177,7 @@ textMessage.createFromBuffer = function(buffer) {
 			curPos += partBuffer.length + 2 + boundary[0].length;
 
 			//well now i have a partHeader and a partBuffer, lets store that shit!
-			
+
 			//do we need to apply sections-ids?
 			if (!partHeader['X-Section-ID'] & multipartSectionId.length) {
 				partHeader['X-Section-ID'] = multipartSectionId[0];
@@ -203,7 +206,7 @@ textMessage.createFromBuffer = function(buffer) {
 			//if there is a --, the multipart is closed.  we must shift off the boundary
 			//to get back to the multipart that we were in.
 			//Either way, we eat 2 for the \r\n or the --.
-			
+
 
 			//POSITION OURSELVES TO WHERE THE NEXT PART IS!
 			//if we are right before some content, directly after the boundary is \r\n
@@ -217,14 +220,14 @@ textMessage.createFromBuffer = function(buffer) {
 				//or popped off our last boundary.. meaning we're basically at
 				//the end
 				if (curPos == buffer.length-2 || !boundary.length) {
-					//there is a -2 because after the end of the boundary-- there is 
+					//there is a -2 because after the end of the boundary-- there is
 					//one more newline!
 					continue;
 				}
 
 				nextBoundaryPos = findBoundary(buffer, boundary[0], curPos);
 				if (curPos < -1) {
-					//err.. lets leave.  we didnt find the next boundary for the multipart we 
+					//err.. lets leave.  we didnt find the next boundary for the multipart we
 					//were in
 					curPos = buffer.length;
 				} else {
@@ -240,11 +243,11 @@ textMessage.createFromBuffer = function(buffer) {
 			//What we found WAS at the beginning of some content.  move past that \r\n
 			//this also eats up the \r\n at the end of the file
 			curPos+=2;
-			
+
 
 			//I just read a part! =D  maybe do it again?
 		}
-	
+
 	}
 
 	return m;

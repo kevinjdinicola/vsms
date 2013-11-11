@@ -93,12 +93,13 @@ messenger.prototype.getCounter = function() {
 
 
 messenger.prototype.exec = function(command) {
+	var that = this;
 	//if im idling, i need to defer the exec command
 	if (this._idling) {
 		//only run the command (and return its deferred)
 		//once idle is off!
 		return this.idleOff().then(function() {
-			return this.exec(command);
+			return that.exec(command);
 		});
 	} else {
 		var d       = when.defer(),
@@ -108,7 +109,7 @@ messenger.prototype.exec = function(command) {
 		this.commandDeferMap[cnt] = d;
 		// console.log("<< ",cmdString);
 		this._connection.write(cmdString);
-		return d.promise.then(this.packetPreprocessor);	
+		return d.promise.then(this.packetPreprocessor);
 	}
 }
 
@@ -226,7 +227,7 @@ messenger.prototype.listConversations = function(count) {
 messenger.prototype.listMessageThread = function(participantUid, latestMessageUid, count) {
 	count = count || 20;
 	return this.exec(c(
-		"XCONV FETCH PARTICIPANTID", 
+		"XCONV FETCH PARTICIPANTID",
 		participantUid,
 		"UID",
 		latestMessageUid,
@@ -249,7 +250,7 @@ messenger.prototype.listMessageThread = function(participantUid, latestMessageUi
 
 messenger.prototype.fetchMessage = function(messageUid) {
 	return this.exec(c(
-		"UID FETCH", 
+		"UID FETCH",
 		messageUid,
 		"(FLAGS XRECIPSTATUS BODY.PEEK[HEADER+TEXT+THUMBNAILS])"
 	)).then(function(lines) {
@@ -260,7 +261,7 @@ messenger.prototype.fetchMessage = function(messageUid) {
 
 messenger.prototype.fetchAttachments = function(messageUid) {
 	return this.exec(c(
-		"UID FETCH", 
+		"UID FETCH",
 		messageUid,
 		"(FLAGS XRECIPSTATUS BODY.PEEK[ATTACHMENTS])"
 	)).then(function(lines) {
