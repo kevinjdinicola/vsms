@@ -239,7 +239,7 @@ messenger.prototype.listMessageThread = function(participantUid, latestMessageUi
 			for (var i = 0, len = lines.length; i < len; i++) {
 				splits = lines[i].split(" ");
 				lines[i] = {
-					participantId : splits[5],
+					participantUid : splits[5],
 					messageUid    : trimEnd(splits[7])
 				}
 			}
@@ -248,13 +248,28 @@ messenger.prototype.listMessageThread = function(participantUid, latestMessageUi
 }
 
 
-messenger.prototype.fetchMessage = function(messageUid) {
+messenger.prototype.fetchMessage = function(message) {
+	var messageUid     = null,
+			participantUid = null;
+
+	if (message && message.messageUid) {
+		messageUid = message.messageUid;
+		participantUid = message.participantUid || null;
+	} else {
+		messageUid = message;
+	}
+
 	return this.exec(c(
 		"UID FETCH",
 		messageUid,
 		"(FLAGS XRECIPSTATUS BODY.PEEK[HEADER+TEXT+THUMBNAILS])"
 	)).then(function(lines) {
 		var text = TextMessage.createFromBuffer(lines[1]);
+
+		if (participantUid != null) {
+			text.participantUid = participantUid;
+		}
+
 		return when.resolve(text);
 	})
 }
